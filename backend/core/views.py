@@ -1,12 +1,13 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import User
-from .serializers import UserSignupSerializer
-
+from .models import User , Profile
+from .serializers import UserSignupSerializer , ProfileSerializer
 
 # 1. 회원가입 API
 class SignupView(APIView):
@@ -54,3 +55,30 @@ class LoginView(APIView):
                 "name": user.name
             }
         }, status=status.HTTP_200_OK)
+
+# 3. 프로필 목록 조회 및 생성 (GET / POST)
+class ProfileListCreateView(ListCreateAPIView):
+    serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]  # JWT 토큰 인증 필수
+
+    def get_queryset(self):
+        # 현재 로그인된 사용자의 프로필만 반환
+        return Profile.objects.filter(user=self.request.user).order_by('-is_main', 'profile_id')
+
+
+# 4. 프로필 상세 조회, 수정, 삭제 (GET / PUT / PATCH / DELETE)
+class ProfileDetailView(RetrieveUpdateDestroyAPIView):
+    serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'profile_id'
+
+    def get_queryset(self):
+        # 본인의 프로필에만 접근 가능
+        return Profile.objects.filter(user=self.request.user)
+
+    def perform_destroy(self, instance):
+        # 대표 프로필은 삭제 불가능하도록 검증
+        if instance.is_main:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"error": "대표 프로필은 삭제할 수 없습니다. 다른 프로필을 대표로 지정 후 삭제해 주세요."})
+        instance.delete()

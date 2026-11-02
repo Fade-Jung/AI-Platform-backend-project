@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import (
     SignupView, LoginView, #KakaoLoginView,
-    ProfileListCreateView, ProfileDetailView
+    ProfileListCreateView, ProfileDetailView,
+    CheckupFileUploadView
 )
 
 urlpatterns = [
@@ -12,5 +13,8 @@ urlpatterns = [
 
 # 프로필 CRUD
     path('profiles/', ProfileListCreateView.as_view(), name='profile-list-create'),
-    path('profiles/<int:profile_id>/', ProfileDetailView.as_view(), name='profile-detail')
+    path('profiles/<int:profile_id>/', ProfileDetailView.as_view(), name='profile-detail'),
+
+# OCR / 검진표 업로드 API 추가
+    path('checkups/upload/', CheckupFileUploadView.as_view(), name='checkup-file-upload'),
 ]

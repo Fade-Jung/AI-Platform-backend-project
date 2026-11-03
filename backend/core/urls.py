@@ -3,7 +3,9 @@ from .views import (
     SignupView, LoginView, #KakaoLoginView,
     ProfileListCreateView, ProfileDetailView,
     CheckupFileUploadView,
-    TimeSeriesAnalysisView
+    TimeSeriesAnalysisView,
+    StateChangesReceiveView,
+    SensitiveSurveyHistoryView
 )
 
 urlpatterns = [
@@ -21,4 +23,8 @@ urlpatterns = [
 
 # 시계열 분석 API 추가
     path('profiles/<int:profile_id>/trends/', TimeSeriesAnalysisView.as_view(), name='profile-trends'),
+
+# state_changes 상태 연동 및 민감정보 보안 조회 API
+    path('state-changes/', StateChangesReceiveView.as_view(), name='state-changes-receive'),
+    path('surveys/<int:survey_id>/sensitive-history/', SensitiveSurveyHistoryView.as_view(), name='sensitive-survey-history'),
 ]

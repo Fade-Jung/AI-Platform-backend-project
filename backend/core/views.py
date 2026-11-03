@@ -7,7 +7,7 @@ from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import transaction
-from .models import Checkup, CheckupFile, CheckupDetail, User, Profile
+from .models import Checkup, CheckupFile, CheckupDetail, User, Profile, ProcessedEvent, Survey, SurveyHistory, Plan, PlanLog, PlanProgress
 from .serializers import UserSignupSerializer , ProfileSerializer
 from .services import TimeSeriesAnalysisService
 
@@ -193,3 +193,105 @@ class TimeSeriesAnalysisView(APIView):
             "profile_name": profile.profile_name,
             "analysis": analysis_data
         }, status=status.HTTP_200_OK)
+
+
+class StateChangesReceiveView(APIView):
+    """
+    AI/OCR 파트에서 처리 결과(state_changes)를 전달하는 API
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        event_id = request.data.get('event_id')
+        state_changes = request.data.get('state_changes')
+
+        if not event_id or not state_changes:
+            return Response({"error": "event_id와 state_changes가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. event_id 중복 체크 (중복 처리 방지)
+        if ProcessedEvent.objects.filter(event_id=event_id).exists():
+            return Response({
+                "message": f"이벤트 [{event_id}]는 이미 처리되었습니다. (스킵됨)",
+                "event_id": event_id
+            }, status=status.HTTP_200_OK)
+
+        with transaction.atomic():
+            # 2. 문진 (profile_id, survey_version 기준 새 행 저장)
+            survey_data = state_changes.get('survey')
+            if survey_data:
+                profile_id = survey_data.get('profile_id')
+                survey_version = survey_data.get('survey_version')
+
+                survey = Survey.objects.create(
+                    profile_id=profile_id,
+                    survey_version=survey_version,
+                    session_id=survey_data.get('session_id'),
+                    content_json=survey_data.get('answers', {})
+                )
+
+                # 민감 이력(질환, 약물, 메모) 분리 저장
+                sensitive_history = survey_data.get('sensitive_history')
+                if sensitive_history:
+                    SurveyHistory.objects.create(
+                        survey=survey,
+                        diseases_info=str(sensitive_history.get('diseases', '')),
+                        medications_info=str(sensitive_history.get('medications', '')),
+                        memo=sensitive_history.get('memos', '')
+                    )
+
+            # 3. 계획 (plan_id, version 기준 보존)
+            plan_data = state_changes.get('plan')
+            if plan_data:
+                Plan.objects.create(
+                    plan_id=plan_data.get('plan_id'),
+                    version=plan_data.get('version', 1),
+                    profile_id=plan_data.get('profile_id'),
+                    plan_data=plan_data.get('details', {})
+                )
+
+            # 4. 실천 기록 (plan_id, date 기준)
+            plan_logs = state_changes.get('plan_logs', [])
+            for log in plan_logs:
+                PlanLog.objects.update_or_create(
+                    plan_id=log.get('plan_id'),
+                    date=log.get('date'),
+                    defaults={'status': log.get('status', 'PENDING')}
+                )
+
+            # 5. 달성도 (plan_id, version, as_of 기준)
+            progress_data = state_changes.get('plan_progress')
+            if progress_data:
+                PlanProgress.objects.create(
+                    plan_id=progress_data.get('plan_id'),
+                    version=progress_data.get('version', 1),
+                    as_of=progress_data.get('as_of'),
+                    progress_rate=progress_data.get('progress_rate', 0.0)
+                )
+
+            # 6. event_id 등록 완료 처리
+            ProcessedEvent.objects.create(event_id=event_id)
+
+        return Response({
+            "message": "state_changes 반영이 성공적으로 진행되었습니다.",
+            "event_id": event_id
+        }, status=status.HTTP_201_CREATED)
+
+
+class SensitiveSurveyHistoryView(APIView):
+    """
+    문진의 History 구역(질환, 약물, 메모) - 권한 제한 전용 조회 API
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, survey_id):
+        try:
+            survey = Survey.objects.get(survey_id=survey_id, profile__user=request.user)
+            history = survey.sensitive_history
+            return Response({
+                "survey_id": survey.survey_id,
+                "diseases_info": history.diseases_info,
+                "medications_info": history.medications_info,
+                "memo": history.memo
+            }, status=status.HTTP_200_OK)
+        except (Survey.DoesNotExist, SurveyHistory.DoesNotExist):
+            return Response({"error": "접근 권한이 없거나 해당 민감 이력이 존재하지 않습니다."}, status=status.HTTP_403_FORBIDDEN)

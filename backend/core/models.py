@@ -229,3 +229,81 @@ class ProfileMedication(models.Model):
         db_table = "profile_medications"
         verbose_name = "사용자 복용약 기록"
         verbose_name_plural = "사용자 복용약 기록"
+
+# 15. 처리된 이벤트 (중복 처리 방지 관리)
+class ProcessedEvent(models.Model):
+    event_id = models.CharField(max_length=100, primary_key=True, verbose_name="이벤트 ID")
+    processed_at = models.DateTimeField(auto_now_add=True, verbose_name="처리 일시")
+
+    class Meta:
+        db_table = "processed_events"
+        verbose_name = "처리된 이벤트"
+
+# 16. 문진 마스터
+
+class Survey(models.Model):
+    survey_id = models.BigAutoField(primary_key=True)
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="surveys", db_column="profile_id")
+    survey_version = models.IntegerField(verbose_name="문진 버전")
+    session_id = models.CharField(max_length=100, null=True, blank=True, verbose_name="문진 세션 ID")
+    content_json = models.JSONField(default=dict, verbose_name="일반 문진 답변")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "surveys"
+        unique_together = (("profile", "survey_version"),)
+        verbose_name = "문진 기록"
+
+# 17. 문진 민감 이력 (질환·약물·메모 - 보안 접근 제한)
+
+class SurveyHistory(models.Model):
+    history_id = models.BigAutoField(primary_key=True)
+    survey = models.OneToOneField(Survey, on_delete=models.CASCADE, related_name="sensitive_history", db_column="survey_id")
+    diseases_info = models.TextField(null=True, blank=True, verbose_name="과거 질환 정보")
+    medications_info = models.TextField(null=True, blank=True, verbose_name="복용 약물 정보")
+    memo = models.TextField(null=True, blank=True, verbose_name="특이사항 메모")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "survey_histories"
+        verbose_name = "문진 민감 이력"
+
+# 18. 건강 관리 계획
+
+class Plan(models.Model):
+    plan_id = models.CharField(max_length=100, verbose_name="계획 ID")
+    version = models.IntegerField(verbose_name="계획 버전")
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="plans", db_column="profile_id")
+    plan_data = models.JSONField(default=dict, verbose_name="계획 상세 내용")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "plans"
+        unique_together = (('plan_id', 'version'),)
+        verbose_name = "건강 관리 계획"
+
+# 19. 계획 실천 기록 (일별 기록)
+class PlanLog(models.Model):
+    log_id = models.BigAutoField(primary_key=True)
+    plan_id = models.CharField(max_length=100, verbose_name="계획 ID")
+    date = models.DateField(verbose_name="실천 날짜")
+    status = models.CharField(max_length=20, default="PENDING", verbose_name="실천 상태")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "plan_logs"
+        unique_together = (('plan_id', 'date'),)
+        verbose_name = "실천 기록"
+
+# 20. 계획 달성도 (시점별 보존)
+class PlanProgress(models.Model):
+    progress_id = models.BigAutoField(primary_key=True)
+    plan_id = models.CharField(max_length=100, verbose_name="계획 ID")
+    version = models.IntegerField(verbose_name="계획 버전")
+    as_of = models.DateTimeField(verbose_name="달성도 집계 시점")
+    progress_rate = models.DecimalField(max_digits=5, decimal_places=2, verbose_name="달성률(%)")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "plan_progresses"
+        verbose_name = "계획 달성도"

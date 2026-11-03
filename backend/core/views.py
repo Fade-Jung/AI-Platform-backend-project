@@ -9,6 +9,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import transaction
 from .models import Checkup, CheckupFile, CheckupDetail, User, Profile
 from .serializers import UserSignupSerializer , ProfileSerializer
+from .services import TimeSeriesAnalysisService
 
 # 1. 회원가입 API
 class SignupView(APIView):
@@ -167,3 +168,28 @@ class CheckupFileUploadView(APIView):
             {"item_name": "이완기혈압", "result_value": "82", "numeric_value": 82.00, "unit": "mmHg", "reference_range": "80 미만"},
             {"item_name": "혈중 콜레스테롤", "result_value": "210", "numeric_value": 210.00, "unit": "mg/dL", "reference_range": "200 이하"},
         ]
+
+class TimeSeriesAnalysisView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, profile_id):
+        # 1. 본인 소유의 프로필인지 권한 검증
+        try:
+            profile = Profile.objects.get(profile_id=profile_id, user=request.user)
+        except Profile.DoesNotExist:
+            return Response({"error": "존재하지 않거나 접근 권한이 없는 프로필입니다."}, status=status.HTTP_404_NOT_FOUND)
+
+        # 2. 특정 항목 필터링 파라미터 (선택사항, 예: ?item_name=공복혈당)
+        target_item = request.query_params.get('item_name', None)
+
+        # 3. 시계열 분석 엔진 실행
+        analysis_data = TimeSeriesAnalysisService.calculate_profile_trends(
+            profile_id=profile.profile_id,
+            item_name=target_item
+        )
+
+        return Response({
+            "profile_id": profile.profile_id,
+            "profile_name": profile.profile_name,
+            "analysis": analysis_data
+        }, status=status.HTTP_200_OK)

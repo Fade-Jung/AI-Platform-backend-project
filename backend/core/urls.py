@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     SignupView, LoginView, #KakaoLoginView,
     ProfileListCreateView, ProfileDetailView,
-    CheckupFileUploadView
+    CheckupFileUploadView,
+    TimeSeriesAnalysisView
 )
 
 urlpatterns = [
@@ -17,4 +18,7 @@ urlpatterns = [
 
 # OCR / 검진표 업로드 API 추가
     path('checkups/upload/', CheckupFileUploadView.as_view(), name='checkup-file-upload'),
+
+# 시계열 분석 API 추가
+    path('profiles/<int:profile_id>/trends/', TimeSeriesAnalysisView.as_view(), name='profile-trends'),
 ]
